@@ -224,6 +224,7 @@ function onRoomUpdate(r) {
   room = r;
   if (qChanged) { answeredThisQ = false; revealedByMe = false; }
   render();
+  maybeAutoReveal();
 }
 
 function render() {
@@ -262,6 +263,7 @@ function submitSoloAnswer(qIndex, optionIndex) {
   if (!room.answers[qIndex]) room.answers[qIndex] = {};
   if (room.answers[qIndex][SOLO_PLAYER_ID]) return;
   room.answers[qIndex][SOLO_PLAYER_ID] = { optionIndex, answeredAt: Date.now() };
+  revealSoloAnswer(); // solo has exactly one player, so answering always means "everyone's answered"
 }
 
 function revealSoloAnswer() {
@@ -357,7 +359,7 @@ function renderQuestion() {
   const answeredCount = Object.keys((room.answers && room.answers[room.currentIndex]) || {}).length;
   const total = Object.keys(room.players || {}).length;
   const answeredPill = $('q-answered');
-  if (session.isHost && !session.solo) {
+  if (!session.solo) {
     answeredPill.hidden = false;
     answeredPill.textContent = `${answeredCount}/${total} answered`;
   } else {
@@ -395,10 +397,6 @@ function renderQuestion() {
     grid.appendChild(btn);
   });
 
-  const forceBtn = $('btn-force-reveal');
-  forceBtn.hidden = !session.isHost;
-  forceBtn.onclick = () => closeQuestionIfNeeded(true);
-
   runTimer();
 }
 
@@ -412,13 +410,16 @@ function runTimer() {
     bar.style.width = `${Math.max(0, (left / total) * 100)}%`;
     if (left <= 0) {
       clearInterval(timerHandle);
-      closeQuestionIfNeeded(false);
+      closeQuestionIfNeeded();
     }
   };
   tick();
   timerHandle = setInterval(tick, 200);
 }
 
+// A question only ever closes for one of two reasons — the timer ran out, or every
+// connected player has answered — never on a manual host shortcut, so nobody can be
+// cut off before they've had their chance.
 async function closeQuestionIfNeeded() {
   if (!session.isHost || revealedByMe || !room || room.state !== 'question') return;
   revealedByMe = true;
@@ -429,6 +430,13 @@ async function closeQuestionIfNeeded() {
     revealedByMe = false;
     toast(e.message);
   }
+}
+
+function maybeAutoReveal() {
+  if (!session.isHost || session.solo || !room || room.state !== 'question') return;
+  const connected = Object.values(room.players || {}).filter((p) => p.connected !== false);
+  const answeredCount = Object.keys((room.answers && room.answers[room.currentIndex]) || {}).length;
+  if (connected.length > 0 && answeredCount >= connected.length) closeQuestionIfNeeded();
 }
 
 // ================================================================ REVEAL
