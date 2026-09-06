@@ -14,11 +14,12 @@
 // This file is safe to commit — a Firebase web config is a public client identifier, not
 // a secret; access is controlled by database.rules.json, not by hiding this object.
 export const firebaseConfig = {
-  apiKey: 'REPLACE_ME',
-  authDomain: 'REPLACE_ME.firebaseapp.com',
-  databaseURL: 'https://REPLACE_ME-default-rtdb.firebaseio.com',
-  projectId: 'REPLACE_ME',
-  storageBucket: 'REPLACE_ME.appspot.com',
-  messagingSenderId: 'REPLACE_ME',
-  appId: 'REPLACE_ME',
+  apiKey: 'AIzaSyALnv2pcuOqoh55LZrFOpKu11kULkZmgq0',
+  authDomain: 'xtrivia-92142.firebaseapp.com',
+  databaseURL: 'https://xtrivia-92142-default-rtdb.firebaseio.com',
+  projectId: 'xtrivia-92142',
+  storageBucket: 'xtrivia-92142.firebasestorage.app',
+  messagingSenderId: '950978595815',
+  appId: '1:950978595815:web:63593325ce825add2f8b42',
+  measurementId: 'G-DJDMJW2MQD',
 };
