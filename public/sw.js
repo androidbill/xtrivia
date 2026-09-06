@@ -1,6 +1,6 @@
 // App-shell cache only. Trivia questions and Firebase traffic always go to the network —
 // caching those would let a player answer a stale question or lose sync with their room.
-const CACHE = 'xtrivia-shell-v1';
+const CACHE = 'xtrivia-shell-2026.09.06.01';
 const SHELL = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const SHELL = [
   './room.js',
   './trivia-api.js',
   './firebase-config.js',
+  './version.js',
   './manifest.webmanifest',
   './icons/icon.svg',
 ];
@@ -29,6 +30,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return; // let Firebase/opentdb go straight to network
+  if (url.pathname.endsWith('/version.json')) return; // always hit the network for update checks
   e.respondWith(
     caches.match(e.request).then((hit) => hit || fetch(e.request)),
   );

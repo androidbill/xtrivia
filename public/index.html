@@ -14,6 +14,33 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<header id="app-header">
+  <span id="app-version" class="app-version"></span>
+  <div class="menu-wrap">
+    <button id="btn-menu" class="btn-kebab" aria-label="Menu" aria-haspopup="true" aria-expanded="false">&#8942;</button>
+    <div id="menu-dropdown" class="dropdown" hidden>
+      <button id="menu-refresh" class="dropdown-item">Refresh</button>
+      <button id="menu-share" class="dropdown-item">Share</button>
+      <button id="menu-about" class="dropdown-item">About</button>
+    </div>
+  </div>
+</header>
+
+<div id="update-banner" class="update-banner" hidden>
+  <span>A new version is available.</span>
+  <button id="btn-update-refresh" class="btn btn-primary btn-sm">Refresh</button>
+</div>
+
+<div id="about-modal" class="modal-backdrop" hidden>
+  <div class="modal">
+    <img src="icons/icon.svg" alt="" class="modal-icon">
+    <h2 id="about-name"></h2>
+    <p id="about-version" class="modal-version"></p>
+    <p class="modal-author">Created by Bill Parsons</p>
+    <button id="btn-about-close" class="btn btn-ghost">Close</button>
+  </div>
+</div>
+
 <!-- ============================================================ HOME -->
 <main id="screen-home" class="screen">
   <div class="brand">

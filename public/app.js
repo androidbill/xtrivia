@@ -4,6 +4,7 @@ import {
   createRoom, joinRoom, rejoinRoom, watchRoom, startGame, submitAnswer,
   revealAnswer, nextQuestion, playAgain, msLeft, CODE_RE,
 } from './room.js';
+import { VERSION, APP_NAME } from './version.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'xtrivia.session';
@@ -41,6 +42,73 @@ function showScreen(id) {
 }
 
 document.querySelectorAll('[data-back]').forEach((b) => b.addEventListener('click', () => showScreen('screen-home')));
+
+// ================================================================ HEADER / MENU / ABOUT
+
+$('app-version').textContent = `v${VERSION}`;
+$('about-name').textContent = APP_NAME;
+$('about-version').textContent = `Version ${VERSION}`;
+
+const menuDropdown = $('menu-dropdown');
+const btnMenu = $('btn-menu');
+
+function closeMenu() {
+  menuDropdown.hidden = true;
+  btnMenu.setAttribute('aria-expanded', 'false');
+}
+
+btnMenu.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const willOpen = menuDropdown.hidden;
+  menuDropdown.hidden = !willOpen;
+  btnMenu.setAttribute('aria-expanded', String(willOpen));
+});
+menuDropdown.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', closeMenu);
+
+$('menu-refresh').addEventListener('click', () => {
+  closeMenu();
+  location.reload();
+});
+
+$('menu-share').addEventListener('click', async () => {
+  closeMenu();
+  const shareData = { title: APP_NAME, text: 'Join me for a game of xTrivia!', url: location.href };
+  if (navigator.share) {
+    try { await navigator.share(shareData); } catch { /* user cancelled */ }
+  } else if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(shareData.url);
+      toast('Link copied to clipboard.');
+    } catch {
+      toast('Sharing is not supported on this browser.');
+    }
+  } else {
+    toast('Sharing is not supported on this browser.');
+  }
+});
+
+$('menu-about').addEventListener('click', () => {
+  closeMenu();
+  $('about-modal').hidden = false;
+});
+$('btn-about-close').addEventListener('click', () => { $('about-modal').hidden = true; });
+$('about-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'about-modal') $('about-modal').hidden = true;
+});
+
+$('btn-update-refresh').addEventListener('click', () => location.reload());
+
+(async function checkForUpdate() {
+  try {
+    const res = await fetch('version.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.version && data.version !== VERSION) $('update-banner').hidden = false;
+  } catch {
+    // offline or unreachable — skip the check
+  }
+})();
 
 // ================================================================ HOME
 
