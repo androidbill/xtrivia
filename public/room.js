@@ -6,7 +6,7 @@
 // database rules only check shape, not identity.
 
 import {
-  rtdb, ref, get, set, update, onValue, onDisconnect,
+  rtdb, ref, get, set, update, remove, onValue, onDisconnect,
   serverTimestamp, serverNow,
 } from './fb.js';
 
@@ -96,15 +96,41 @@ export async function startGame(code, questions) {
     state: 'question',
     questionStartedAt: serverTimestamp(),
     answers: null,
+    pause: null,
+    pausedMs: 0,
   });
 }
 
 /** Player: record an answer for the current question, once. */
-export async function submitAnswer(code, qIndex, playerId, optionIndex) {
+export async function submitAnswer(code, qIndex, playerId, optionIndex, pausedMs) {
   const path = ref(rtdb, `rooms/${code}/answers/${qIndex}/${playerId}`);
   const existing = await get(path);
   if (existing.exists()) return; // already answered this question
-  await set(path, { optionIndex, answeredAt: serverTimestamp() });
+  await set(path, { optionIndex, answeredAt: serverTimestamp(), pausedMsAtAnswer: pausedMs || 0 });
+}
+
+/**
+ * Host: freeze the current question's clock. Time is tracked as an accumulated
+ * pausedMs total rather than by shifting questionStartedAt, so an answer submitted
+ * before this pause keeps the score it already earned regardless of how long the
+ * pause (or any later one this question) ends up lasting.
+ */
+export async function pauseGame(code) {
+  await update(roomRef(code), { pause: { status: 'active', startedAt: serverTimestamp() } });
+}
+
+/** Host: end the current pause, folding its real (server-clock) duration into pausedMs. */
+export async function resumeGame(code, room) {
+  const startedAt = room.pause?.startedAt;
+  if (!startedAt) return;
+  const elapsed = Math.max(0, serverNow() - startedAt);
+  await update(roomRef(code), { pause: null, pausedMs: (room.pausedMs || 0) + elapsed });
+}
+
+/** Host: end the game for everyone — deleting the room makes every watcher's onValue
+ * fire with null, which is exactly the "kicked to home" path already used elsewhere. */
+export async function endRoom(code) {
+  await remove(roomRef(code));
 }
 
 /**
@@ -121,7 +147,7 @@ export async function revealAnswer(code, room) {
   const updates = { state: 'reveal' };
   for (const [pid, ans] of Object.entries(answers)) {
     const correct = ans.optionIndex === question.correctIndex;
-    const msRemaining = (startedAt + seconds * 1000) - ans.answeredAt;
+    const msRemaining = (startedAt + seconds * 1000) - ans.answeredAt + (ans.pausedMsAtAnswer || 0);
     const points = scoreAnswer(correct, msRemaining, seconds * 1000);
     updates[`answers/${qIndex}/${pid}/correct`] = correct;
     updates[`answers/${qIndex}/${pid}/points`] = points;
@@ -141,6 +167,8 @@ export async function nextQuestion(code, room) {
       currentIndex: next,
       state: 'question',
       questionStartedAt: serverTimestamp(),
+      pause: null,
+      pausedMs: 0,
     });
   }
 }
@@ -153,6 +181,8 @@ export async function playAgain(code, questions) {
     currentIndex: 0,
     state: 'question',
     questionStartedAt: serverTimestamp(),
+    pause: null,
+    pausedMs: 0,
   });
   const snap = await get(ref(rtdb, `rooms/${code}/players`));
   const players = snap.val() || {};
@@ -161,9 +191,14 @@ export async function playAgain(code, questions) {
   await update(roomRef(code), resets);
 }
 
+export function isPaused(room) {
+  return room?.pause?.status === 'active';
+}
+
 export function msLeft(room) {
   if (!room.questionStartedAt) return 0;
   const total = room.settings.seconds * 1000;
-  const elapsed = serverNow() - room.questionStartedAt;
+  const pausedSoFar = (room.pausedMs || 0) + (isPaused(room) ? Math.max(0, serverNow() - room.pause.startedAt) : 0);
+  const elapsed = serverNow() - room.questionStartedAt - pausedSoFar;
   return Math.max(0, total - elapsed);
 }

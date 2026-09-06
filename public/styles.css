@@ -233,6 +233,18 @@ h3 { font-size: 1rem; margin: 8px 0 0; color: var(--muted); }
   cursor: pointer;
 }
 .dropdown-item:active { background: rgba(255,255,255,0.08); }
+.dropdown-item-danger { color: var(--bad); }
+
+.pause-banner {
+  background: var(--card);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  padding: 12px 14px;
+  text-align: center;
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
 
 .update-banner {
   position: fixed;

@@ -1,6 +1,6 @@
 // App-shell cache only. Trivia questions and Firebase traffic always go to the network —
 // caching those would let a player answer a stale question or lose sync with their room.
-const CACHE = 'xtrivia-shell-2026.09.06.05';
+const CACHE = 'xtrivia-shell-2026.09.06.06';
 const SHELL = [
   './',
   './index.html',

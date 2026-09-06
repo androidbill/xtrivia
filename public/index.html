@@ -21,6 +21,8 @@
     <div id="menu-dropdown" class="dropdown" hidden>
       <button id="menu-refresh" class="dropdown-item">Refresh</button>
       <button id="menu-share" class="dropdown-item">Share</button>
+      <button id="menu-pause" class="dropdown-item" hidden>Pause game</button>
+      <button id="menu-end" class="dropdown-item dropdown-item-danger" hidden>Quit game</button>
       <button id="menu-about" class="dropdown-item">About</button>
     </div>
   </div>
@@ -132,6 +134,9 @@
     <span id="q-answered" class="pill pill-muted" hidden></span>
   </div>
   <div class="timer-track"><div id="q-timer-bar" class="timer-bar"></div></div>
+  <div id="pause-banner" class="pause-banner" hidden>
+    <span id="pause-banner-text">Game paused</span>
+  </div>
   <h2 id="q-text" class="q-text"></h2>
   <div id="q-options" class="options-grid"></div>
 </main>

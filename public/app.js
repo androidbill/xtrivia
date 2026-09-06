@@ -2,7 +2,8 @@ import { NET_READY } from './fb.js';
 import { fetchCategories, fetchQuestions } from './trivia-api.js';
 import {
   createRoom, joinRoom, rejoinRoom, watchRoom, startGame, submitAnswer,
-  revealAnswer, nextQuestion, playAgain, msLeft, scoreAnswer, CODE_RE,
+  revealAnswer, nextQuestion, playAgain, msLeft, scoreAnswer, isPaused,
+  pauseGame, resumeGame, endRoom, CODE_RE,
 } from './room.js';
 import { VERSION, APP_NAME } from './version.js';
 
@@ -89,6 +90,40 @@ $('menu-share').addEventListener('click', async () => {
     }
   } else {
     toast('Sharing is not supported on this browser.');
+  }
+});
+
+$('menu-pause').addEventListener('click', async () => {
+  closeMenu();
+  if (!room) return;
+  try {
+    if (session.solo) {
+      if (isPaused(room)) resumeSoloGame(); else pauseSoloGame();
+    } else if (isPaused(room)) {
+      await resumeGame(room.code, room);
+    } else {
+      await pauseGame(room.code);
+    }
+  } catch (e) {
+    toast(e.message);
+  }
+});
+
+$('menu-end').addEventListener('click', async () => {
+  closeMenu();
+  if (!room) return;
+  if (session.solo) {
+    session = null;
+    room = null;
+    showScreen('screen-home');
+    return;
+  }
+  const prompt = room.state === 'lobby' ? 'Cancel this game?' : 'End this game for everyone?';
+  if (!confirm(prompt)) return;
+  try {
+    await endRoom(room.code);
+  } catch (e) {
+    toast(e.message);
   }
 });
 
@@ -200,7 +235,9 @@ $('btn-back-home').addEventListener('click', () => {
   unwatch = null;
   clearSession();
   session = null;
+  room = null;
   showScreen('screen-home');
+  updateHostMenu();
 });
 
 // ================================================================ ROOM WATCH
@@ -212,12 +249,14 @@ function enterRoom() {
 
 function onRoomUpdate(r) {
   if (!r) {
-    toast('The room closed.');
+    toast('The host ended the game.');
     if (unwatch) unwatch();
     unwatch = null;
     clearSession();
     session = null;
+    room = null;
     showScreen('screen-home');
+    updateHostMenu();
     return;
   }
   const qChanged = !room || room.currentIndex !== r.currentIndex || room.state !== r.state;
@@ -228,11 +267,27 @@ function onRoomUpdate(r) {
 }
 
 function render() {
+  updateHostMenu();
   if (!room) return;
   if (room.state === 'lobby') renderLobby();
   else if (room.state === 'question') renderQuestion();
   else if (room.state === 'reveal') renderReveal();
   else if (room.state === 'end') renderEnd();
+}
+
+function updateHostMenu() {
+  const pauseItem = $('menu-pause');
+  const endItem = $('menu-end');
+  const isActiveHost = !!(session && session.isHost && room);
+  if (!isActiveHost) {
+    pauseItem.hidden = true;
+    endItem.hidden = true;
+    return;
+  }
+  pauseItem.hidden = room.state !== 'question';
+  pauseItem.textContent = isPaused(room) ? 'Resume game' : 'Pause game';
+  endItem.hidden = false;
+  endItem.textContent = room.state === 'lobby' ? 'Cancel game' : 'Quit game';
 }
 
 // ================================================================ SOLO MODE
@@ -252,6 +307,8 @@ function startSoloGame(name, settings, questions) {
     questionStartedAt: Date.now(),
     answers: {},
     players: { [SOLO_PLAYER_ID]: { name: name || 'You', score: 0, isHost: true } },
+    pause: null,
+    pausedMs: 0,
   };
   session = { code: 'SOLO', playerId: SOLO_PLAYER_ID, name: name || 'You', isHost: true, solo: true };
   answeredThisQ = false;
@@ -260,9 +317,10 @@ function startSoloGame(name, settings, questions) {
 }
 
 function submitSoloAnswer(qIndex, optionIndex) {
+  if (isPaused(room)) return;
   if (!room.answers[qIndex]) room.answers[qIndex] = {};
   if (room.answers[qIndex][SOLO_PLAYER_ID]) return;
-  room.answers[qIndex][SOLO_PLAYER_ID] = { optionIndex, answeredAt: Date.now() };
+  room.answers[qIndex][SOLO_PLAYER_ID] = { optionIndex, answeredAt: Date.now(), pausedMsAtAnswer: room.pausedMs || 0 };
   revealSoloAnswer(); // solo has exactly one player, so answering always means "everyone's answered"
 }
 
@@ -273,7 +331,7 @@ function revealSoloAnswer() {
   const ans = room.answers[qIndex] && room.answers[qIndex][SOLO_PLAYER_ID];
   if (ans) {
     const correct = ans.optionIndex === question.correctIndex;
-    const msRemaining = (room.questionStartedAt + seconds * 1000) - ans.answeredAt;
+    const msRemaining = (room.questionStartedAt + seconds * 1000) - ans.answeredAt + (ans.pausedMsAtAnswer || 0);
     const points = scoreAnswer(correct, msRemaining, seconds * 1000);
     ans.correct = correct;
     ans.points = points;
@@ -291,6 +349,8 @@ function nextSoloQuestion() {
     room.currentIndex = next;
     room.state = 'question';
     room.questionStartedAt = Date.now();
+    room.pause = null;
+    room.pausedMs = 0;
   }
   answeredThisQ = false;
   revealedByMe = false;
@@ -303,9 +363,24 @@ function playSoloAgain(questions) {
   room.currentIndex = 0;
   room.state = 'question';
   room.questionStartedAt = Date.now();
+  room.pause = null;
+  room.pausedMs = 0;
   room.players[SOLO_PLAYER_ID].score = 0;
   answeredThisQ = false;
   revealedByMe = false;
+  render();
+}
+
+function pauseSoloGame() {
+  if (isPaused(room)) return;
+  room.pause = { status: 'active', startedAt: Date.now() };
+  render();
+}
+
+function resumeSoloGame() {
+  if (!isPaused(room)) return;
+  room.pausedMs = (room.pausedMs || 0) + Math.max(0, Date.now() - room.pause.startedAt);
+  room.pause = null;
   render();
 }
 
@@ -369,6 +444,13 @@ function renderQuestion() {
   const myAnswer = (room.answers && room.answers[room.currentIndex] && room.answers[room.currentIndex][session.playerId]) || null;
   answeredThisQ = !!myAnswer;
 
+  const paused = isPaused(room);
+  const pauseBanner = $('pause-banner');
+  pauseBanner.hidden = !paused;
+  $('pause-banner-text').textContent = session.isHost
+    ? 'Game paused — resume from the menu when ready.'
+    : 'Game paused — waiting for the host to resume.';
+
   const grid = $('q-options');
   grid.innerHTML = '';
   q.options.forEach((opt, i) => {
@@ -379,9 +461,11 @@ function renderQuestion() {
       btn.disabled = true;
       if (myAnswer.optionIndex === i) btn.classList.add('chosen');
       else btn.classList.add('faded');
+    } else if (paused) {
+      btn.disabled = true;
     }
     btn.addEventListener('click', async () => {
-      if (answeredThisQ) return;
+      if (answeredThisQ || isPaused(room)) return;
       answeredThisQ = true;
       grid.querySelectorAll('.opt-btn').forEach((b, j) => {
         b.disabled = true;
@@ -421,7 +505,7 @@ function runTimer() {
 // connected player has answered — never on a manual host shortcut, so nobody can be
 // cut off before they've had their chance.
 async function closeQuestionIfNeeded() {
-  if (!session.isHost || revealedByMe || !room || room.state !== 'question') return;
+  if (!session.isHost || revealedByMe || !room || room.state !== 'question' || isPaused(room)) return;
   revealedByMe = true;
   try {
     if (session.solo) revealSoloAnswer();

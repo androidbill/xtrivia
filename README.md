@@ -20,6 +20,12 @@ no build step, no server code beyond a Firebase Realtime Database.
   they're submitted (500-1000 points); wrong or missed answers score 0.
 - After each question the host reveals the correct answer and the room moves on; after
   the last question everyone sees a final podium and leaderboard.
+- A question closes only when the timer runs out or everyone connected has answered —
+  never on a manual shortcut, so nobody gets cut off early. The host can also pause the
+  clock at any time (from the kebab menu) — the countdown freezes exactly where it was,
+  using the same server-clock accounting as scoring so pausing never lets a device's own
+  clock skew things — and can end the game for everyone at any time, which immediately
+  returns every player to the home screen.
 - The host device is authoritative for timing and scoring (there's no server function) —
   if the host closes their tab mid-game, the round stalls until they come back.
 
