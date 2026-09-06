@@ -52,6 +52,21 @@ npm run serve      # http-server on :8080
 or point any other static server (Vite, `python -m http.server`, Firebase Hosting
 emulator, etc.) at `public/`.
 
+## Releasing a new version
+
+The app shows its version (`YYYY.MM.DD.NN`) in the header and checks it against
+`public/version.json` on load to prompt users to refresh when they're stale. Before
+deploying a change, run:
+
+```
+npm run version:bump           # bumps to today's date, or increments NN if already today
+npm run version:bump 2026.01.01.01   # or set an explicit version
+```
+
+This keeps `public/version.json`, `public/version.js`, and the cache name in
+`public/sw.js` in sync — the last one matters because a browser only re-installs a
+service worker when `sw.js`'s own bytes change.
+
 ## Notes / known limitations
 
 - **No auth.** Like a living-room party game, the room code is the only thing gating
