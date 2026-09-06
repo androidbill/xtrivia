@@ -277,3 +277,8 @@ h3 { font-size: 1rem; margin: 8px 0 0; color: var(--muted); }
 .modal-icon { width: 64px; height: 64px; }
 .modal-version { color: var(--muted); font-size: 0.9rem; margin: 0; }
 .modal-author { color: var(--muted); font-size: 0.85rem; margin: 4px 0 12px; }
+
+/* Every element above sets its own `display`, which otherwise beats the browser's
+   default `[hidden] { display: none }` rule — this reasserts it so toggling the
+   `hidden` attribute/property always actually hides things. */
+[hidden] { display: none !important; }
