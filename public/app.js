@@ -2,7 +2,7 @@ import { NET_READY } from './fb.js';
 import { fetchCategories, fetchQuestions } from './trivia-api.js';
 import {
   createRoom, joinRoom, rejoinRoom, watchRoom, startGame, submitAnswer,
-  revealAnswer, nextQuestion, playAgain, msLeft, CODE_RE,
+  revealAnswer, nextQuestion, playAgain, msLeft, scoreAnswer, CODE_RE,
 } from './room.js';
 import { VERSION, APP_NAME } from './version.js';
 
@@ -20,12 +20,16 @@ function clearSession() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-let session = null;   // { code, playerId, name, isHost }
+let session = null;   // { code, playerId, name, isHost, solo? }
 let unwatch = null;   // current room subscription teardown
 let room = null;      // last known room snapshot
 let answeredThisQ = false;
 let revealedByMe = false; // guards the host from calling revealAnswer twice for one question
 let timerHandle = null;
+let setupMode = 'host'; // 'host' | 'solo' — which flow screen-host-setup currently drives
+let categoriesLoaded = false;
+
+const SOLO_PLAYER_ID = 'solo';
 
 // ---------------------------------------------------------------- toast
 function toast(msg) {
@@ -114,8 +118,8 @@ $('btn-update-refresh').addEventListener('click', () => location.reload());
 
 if (!NET_READY) $('offline-note').hidden = false;
 
-$('btn-go-host').addEventListener('click', async () => {
-  showScreen('screen-host-setup');
+async function ensureCategoriesLoaded() {
+  if (categoriesLoaded) return;
   try {
     const cats = await fetchCategories();
     const sel = $('host-category');
@@ -125,16 +129,28 @@ $('btn-go-host').addEventListener('click', async () => {
       opt.textContent = c.name;
       sel.appendChild(opt);
     }
-  } catch (e) {
+    categoriesLoaded = true;
+  } catch {
     toast('Could not load categories — "Any category" still works.');
   }
-});
+}
+
+function enterSetupScreen(mode) {
+  setupMode = mode;
+  $('setup-heading').textContent = mode === 'solo' ? 'Play solo' : 'Host a game';
+  $('btn-create-room').textContent = mode === 'solo' ? 'Start game' : 'Create room';
+  showScreen('screen-host-setup');
+  ensureCategoriesLoaded();
+}
+
+$('btn-go-host').addEventListener('click', () => enterSetupScreen('host'));
+$('btn-go-solo').addEventListener('click', () => enterSetupScreen('solo'));
 
 $('host-amount').addEventListener('input', (e) => { $('host-amount-val').textContent = e.target.value; });
 $('host-seconds').addEventListener('input', (e) => { $('host-seconds-val').textContent = e.target.value; });
 
 $('btn-create-room').addEventListener('click', async () => {
-  const name = $('host-name').value.trim() || 'Host';
+  const name = $('host-name').value.trim() || (setupMode === 'solo' ? 'You' : 'Host');
   const settings = {
     category: $('host-category').value,
     difficulty: $('host-difficulty').value,
@@ -144,10 +160,15 @@ $('btn-create-room').addEventListener('click', async () => {
   const btn = $('btn-create-room');
   btn.disabled = true;
   try {
-    const { code, playerId } = await createRoom(name, settings);
-    session = { code, playerId, name, isHost: true };
-    saveSession(session);
-    enterRoom();
+    if (setupMode === 'solo') {
+      const qs = await fetchQuestions(settings);
+      startSoloGame(name, settings, qs);
+    } else {
+      const { code, playerId } = await createRoom(name, settings);
+      session = { code, playerId, name, isHost: true };
+      saveSession(session);
+      enterRoom();
+    }
   } catch (e) {
     toast(e.message);
   } finally {
@@ -213,6 +234,79 @@ function render() {
   else if (room.state === 'end') renderEnd();
 }
 
+// ================================================================ SOLO MODE
+//
+// Solo plays out entirely in memory, in the same room-shaped object the multiplayer
+// screens already render — no Firebase room exists, so these mirror room.js's functions
+// but mutate `room` directly and call render() themselves instead of relying on a
+// Firebase onValue callback.
+
+function startSoloGame(name, settings, questions) {
+  room = {
+    code: 'SOLO',
+    state: 'question',
+    settings,
+    questions,
+    currentIndex: 0,
+    questionStartedAt: Date.now(),
+    answers: {},
+    players: { [SOLO_PLAYER_ID]: { name: name || 'You', score: 0, isHost: true } },
+  };
+  session = { code: 'SOLO', playerId: SOLO_PLAYER_ID, name: name || 'You', isHost: true, solo: true };
+  answeredThisQ = false;
+  revealedByMe = false;
+  render();
+}
+
+function submitSoloAnswer(qIndex, optionIndex) {
+  if (!room.answers[qIndex]) room.answers[qIndex] = {};
+  if (room.answers[qIndex][SOLO_PLAYER_ID]) return;
+  room.answers[qIndex][SOLO_PLAYER_ID] = { optionIndex, answeredAt: Date.now() };
+}
+
+function revealSoloAnswer() {
+  const qIndex = room.currentIndex;
+  const question = room.questions[qIndex];
+  const seconds = room.settings.seconds;
+  const ans = room.answers[qIndex] && room.answers[qIndex][SOLO_PLAYER_ID];
+  if (ans) {
+    const correct = ans.optionIndex === question.correctIndex;
+    const msRemaining = (room.questionStartedAt + seconds * 1000) - ans.answeredAt;
+    const points = scoreAnswer(correct, msRemaining, seconds * 1000);
+    ans.correct = correct;
+    ans.points = points;
+    room.players[SOLO_PLAYER_ID].score += points;
+  }
+  room.state = 'reveal';
+  render();
+}
+
+function nextSoloQuestion() {
+  const next = room.currentIndex + 1;
+  if (next >= room.questions.length) {
+    room.state = 'end';
+  } else {
+    room.currentIndex = next;
+    room.state = 'question';
+    room.questionStartedAt = Date.now();
+  }
+  answeredThisQ = false;
+  revealedByMe = false;
+  render();
+}
+
+function playSoloAgain(questions) {
+  room.questions = questions;
+  room.answers = {};
+  room.currentIndex = 0;
+  room.state = 'question';
+  room.questionStartedAt = Date.now();
+  room.players[SOLO_PLAYER_ID].score = 0;
+  answeredThisQ = false;
+  revealedByMe = false;
+  render();
+}
+
 // ================================================================ LOBBY
 
 function renderLobby() {
@@ -263,7 +357,7 @@ function renderQuestion() {
   const answeredCount = Object.keys((room.answers && room.answers[room.currentIndex]) || {}).length;
   const total = Object.keys(room.players || {}).length;
   const answeredPill = $('q-answered');
-  if (session.isHost) {
+  if (session.isHost && !session.solo) {
     answeredPill.hidden = false;
     answeredPill.textContent = `${answeredCount}/${total} answered`;
   } else {
@@ -292,7 +386,8 @@ function renderQuestion() {
         if (j === i) b.classList.add('chosen'); else b.classList.add('faded');
       });
       try {
-        await submitAnswer(room.code, room.currentIndex, session.playerId, i);
+        if (session.solo) submitSoloAnswer(room.currentIndex, i);
+        else await submitAnswer(room.code, room.currentIndex, session.playerId, i);
       } catch (e) {
         toast(e.message);
       }
@@ -328,7 +423,8 @@ async function closeQuestionIfNeeded() {
   if (!session.isHost || revealedByMe || !room || room.state !== 'question') return;
   revealedByMe = true;
   try {
-    await revealAnswer(room.code, room);
+    if (session.solo) revealSoloAnswer();
+    else await revealAnswer(room.code, room);
   } catch (e) {
     revealedByMe = false;
     toast(e.message);
@@ -379,8 +475,10 @@ function renderReveal() {
     nextBtn.textContent = isLast ? 'See final scores' : 'Next question';
     nextBtn.onclick = async () => {
       nextBtn.disabled = true;
-      try { await nextQuestion(room.code, room); }
-      catch (e) { toast(e.message); }
+      try {
+        if (session.solo) nextSoloQuestion();
+        else await nextQuestion(room.code, room);
+      } catch (e) { toast(e.message); }
       finally { nextBtn.disabled = false; }
     };
   } else {
@@ -420,7 +518,8 @@ function renderEnd() {
     again.disabled = true;
     try {
       const qs = await fetchQuestions(room.settings);
-      await playAgain(room.code, qs);
+      if (session.solo) playSoloAgain(qs);
+      else await playAgain(room.code, qs);
     } catch (e) {
       toast(e.message);
     } finally {

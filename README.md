@@ -12,6 +12,9 @@ no build step, no server code beyond a Firebase Realtime Database.
   Database](https://opentdb.com) at game-start time and are stored on the room so every
   device sees the identical question set and shuffled answer order.
 - **Players** join with a name and the room code.
+- **Solo** skips rooms entirely: pick the same settings and play through the question set
+  by yourself, scored the same way. It runs entirely in the browser (no Firebase writes),
+  so it works even without a Firebase project configured.
 - Once started, every connected player sees the same question at the same time and has
   until the timer runs out to pick an answer. Correct answers score more the faster
   they're submitted (500-1000 points); wrong or missed answers score 0.
